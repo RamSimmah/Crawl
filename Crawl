@@ -1,0 +1,60 @@
+from flask import Flask, request, jsonify
+import requests
+from bs4 import BeautifulSoup
+from urllib.parse import urljoin
+
+app = Flask(__name__)
+
+def fetch_sublink_content(sublink):
+    try:
+        response = requests.get(sublink, verify=True)  # Fetch content from the sublink
+        
+        if response.status_code == 200:
+            soup = BeautifulSoup(response.content, 'html.parser')
+            # Extract content (adjust this part based on what content you need)
+            paragraphs = soup.find_all('p')
+            extracted_content = [paragraph.text for paragraph in paragraphs]
+            return extracted_content
+        else:
+            return None
+    except requests.RequestException as e:
+        return None
+
+@app.route('/crawl', methods=['POST'])
+def crawl_website():
+    data = request.get_json()
+    if not data or 'url' not in data:
+        return jsonify({'error': 'Please provide a URL to crawl.'}), 400
+
+    url = data['url']
+    crawled_links = []  # List to store crawled sublinks
+    content = []  # List to store content from sublinks
+    sublinks_crawled = 0  # Counter for sublinks crawled
+    
+    try:
+        response = requests.get(url, verify=True)  # Fetch main URL content
+        
+        if response.status_code == 200:
+            soup = BeautifulSoup(response.content, 'html.parser')
+            links = soup.find_all('a', href=True)
+            
+            for link in links:
+                if sublinks_crawled >= 10:  # Stop after crawling 10 sublinks
+                    break
+                
+                sublink = urljoin(url, link['href'])  # Get absolute sublink
+                sub_content = fetch_sublink_content(sublink)  # Fetch content from sublink
+                
+                if sub_content:
+                    crawled_links.append(sublink)  # Store crawled sublink
+                    content.extend(sub_content)  # Store content from sublink
+                    sublinks_crawled += 1
+            
+            return jsonify({'crawled_links': crawled_links, 'content': content})  # Return crawled sublinks and their content
+        else:
+            return jsonify({'error': f"Failed to fetch main URL: {url}"}), 400
+    except requests.RequestException as e:
+        return jsonify({'error': f"Error: {str(e)}"}), 500
+
+if __name__ == '__main__':
+    app.run(debug=True)
